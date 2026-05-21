@@ -1,0 +1,125 @@
+apiVersion: v1
+data:
+  workflow-backup-hook.js: |
+    const DEFAULT_TIMEOUT_MS = 3000;
+
+    function getWorkflowId(workflowData) {
+      if (typeof workflowData === 'string') return workflowData;
+      if (workflowData && workflowData.id) return String(workflowData.id);
+      return '';
+    }
+
+    function getWorkflowName(workflowData) {
+      if (workflowData && typeof workflowData === 'object' && workflowData.name) {
+        return String(workflowData.name);
+      }
+      return null;
+    }
+
+    async function findWorkflow(ctx, workflowId) {
+      const workflows = ctx && ctx.dbCollections && ctx.dbCollections.Workflow;
+      if (!workflows || !workflowId) return null;
+
+      if (typeof workflows.findOneBy === 'function') {
+        return workflows.findOneBy({ id: workflowId });
+      }
+
+      if (typeof workflows.findOne === 'function') {
+        return workflows.findOne({ where: { id: workflowId } });
+      }
+
+      if (typeof workflows.find === 'function') {
+        const results = await workflows.find({ where: { id: workflowId }, take: 1 });
+        return results && results[0] ? results[0] : null;
+      }
+
+      return null;
+    }
+
+    function isExcluded(workflowId) {
+      const excluded = (process.env.N8N_BACKUP_EXCLUDE_WORKFLOW_IDS || '')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+
+      return excluded.includes(workflowId);
+    }
+
+    async function postBackupEvent(ctx, event, workflowData) {
+      const url = process.env.N8N_BACKUP_WEBHOOK_URL;
+      if (!url) return;
+
+      const workflowId = getWorkflowId(workflowData);
+      if (!workflowId || isExcluded(workflowId)) return;
+      const fullWorkflow =
+        workflowData && typeof workflowData === 'object'
+          ? workflowData
+          : await findWorkflow(ctx, workflowId);
+
+      const timeoutMs = Number(process.env.N8N_BACKUP_HOOK_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+      const payload = {
+        source: 'n8n-external-hook',
+        instance: process.env.N8N_BACKUP_SOURCE_INSTANCE || process.env.N8N_HOST || 'n8n',
+        event,
+        workflowId,
+        workflowName: getWorkflowName(fullWorkflow) || getWorkflowName(workflowData),
+        workflow: fullWorkflow || null,
+        timestamp: new Date().toISOString(),
+      };
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-n8n-backup-secret': process.env.N8N_BACKUP_WEBHOOK_SECRET || '',
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          console.warn(
+            `[workflow-backup-hook] Backup webhook returned HTTP ${response.status} for ${event} ${workflowId}`,
+          );
+        }
+      } catch (error) {
+        console.warn(
+          `[workflow-backup-hook] Failed to send ${event} for ${workflowId}: ${error.message}`,
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    module.exports = {
+      workflow: {
+        afterCreate: [
+          async function afterCreate(workflowId) {
+            await postBackupEvent(this, 'workflow.afterCreate', workflowId);
+          },
+        ],
+        afterUpdate: [
+          async function afterUpdate(workflowData) {
+            await postBackupEvent(this, 'workflow.afterUpdate', workflowData);
+          },
+        ],
+        afterArchive: [
+          async function afterArchive(workflowId) {
+            await postBackupEvent(this, 'workflow.afterArchive', workflowId);
+          },
+        ],
+        afterUnarchive: [
+          async function afterUnarchive(workflowId) {
+            await postBackupEvent(this, 'workflow.afterUnarchive', workflowId);
+          },
+        ],
+      },
+    };
+kind: ConfigMap
+metadata:
+  name: n8n-workflow-backup-hook
+  namespace: n8n

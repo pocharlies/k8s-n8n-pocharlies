@@ -1,0 +1,10 @@
+[
+  { "op": "replace", "path": "/metadata/name", "value": "n8n-stg" },
+  { "op": "replace", "path": "/metadata/namespace", "value": "n8n-stg" },
+  { "op": "replace", "path": "/metadata/labels/app.kubernetes.io~1name", "value": "n8n-stg" },
+  { "op": "replace", "path": "/metadata/annotations/external-dns.alpha.kubernetes.io~1hostname", "value": "n8n-stg.e-dani.com" },
+  { "op": "replace", "path": "/spec/rules/0/host", "value": "n8n-stg.e-dani.com" },
+  { "op": "replace", "path": "/spec/rules/0/http/paths/0/backend/service/name", "value": "n8n-stg" },
+  { "op": "replace", "path": "/spec/tls/0/hosts/0", "value": "n8n-stg.e-dani.com" },
+  { "op": "replace", "path": "/spec/tls/0/secretName", "value": "n8n-stg-tls" }
+]

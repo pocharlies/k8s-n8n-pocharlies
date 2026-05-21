@@ -1,0 +1,50 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - target:
+      version: v1
+      kind: Namespace
+      name: n8n
+    path: patches/namespace.json
+  - target:
+      version: v1
+      kind: PersistentVolumeClaim
+      name: n8n-data
+      namespace: n8n
+    path: patches/pvc.json
+  - path: patches/delete-externalsecrets.yaml
+  - target:
+      group: postgresql.cnpg.io
+      version: v1
+      kind: Database
+      name: n8n
+      namespace: databases
+    path: patches/database.json
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: n8n
+      namespace: n8n
+    path: patches/deployment.json
+  - target:
+      version: v1
+      kind: Service
+      name: n8n
+      namespace: n8n
+    path: patches/service.json
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: n8n
+      namespace: n8n
+    path: patches/ingress.json
+  - target:
+      version: v1
+      kind: ConfigMap
+      name: n8n-workflow-backup-hook
+      namespace: n8n
+    path: patches/workflow-backup-configmap.json

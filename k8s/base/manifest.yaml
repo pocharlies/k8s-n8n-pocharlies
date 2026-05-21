@@ -1,0 +1,287 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: n8n
+---
+# n8n uses the shared CloudNativePG PostgreSQL cluster.
+# The PVC is kept only for n8n local files, not for SQLite.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: n8n-data
+  namespace: n8n
+  labels:
+    app.kubernetes.io/name: n8n
+    app.kubernetes.io/part-of: workflow-automation
+    app.kubernetes.io/component: storage
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 5Gi } }
+  storageClassName: longhorn
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: n8n-db-credentials
+  namespace: databases
+  labels:
+    app.kubernetes.io/name: n8n
+    app.kubernetes.io/part-of: workflow-automation
+    app.kubernetes.io/component: database-credentials
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: n8n-db-credentials
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    template:
+      type: kubernetes.io/basic-auth
+      engineVersion: v2
+      data:
+        username: "{{ .username }}"
+        password: "{{ .password }}"
+  data:
+    - secretKey: username
+      remoteRef: { key: postgres-shared/users/n8n, property: username }
+    - secretKey: password
+      remoteRef: { key: postgres-shared/users/n8n, property: password }
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: n8n
+  namespace: databases
+  labels:
+    app.kubernetes.io/name: n8n
+    app.kubernetes.io/part-of: workflow-automation
+    app.kubernetes.io/component: database
+spec:
+  cluster:
+    name: postgres-shared
+  name: n8n
+  owner: n8n
+  ensure: present
+  databaseReclaimPolicy: retain
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: n8n-postgres
+  namespace: n8n
+  labels:
+    app.kubernetes.io/name: n8n
+    app.kubernetes.io/part-of: workflow-automation
+    app.kubernetes.io/component: db-client
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: n8n-postgres
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    template:
+      type: Opaque
+      engineVersion: v2
+      data:
+        DB_POSTGRESDB_USER: "{{ .username }}"
+        DB_POSTGRESDB_PASSWORD: "{{ .password }}"
+  data:
+    - secretKey: username
+      remoteRef: { key: postgres-shared/users/n8n, property: username }
+    - secretKey: password
+      remoteRef: { key: postgres-shared/users/n8n, property: password }
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: n8n-app
+  namespace: n8n
+  labels:
+    app.kubernetes.io/name: n8n
+    app.kubernetes.io/part-of: workflow-automation
+    app.kubernetes.io/component: app-secrets
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: n8n-app
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    template:
+      type: Opaque
+      engineVersion: v2
+      data:
+        N8N_ENCRYPTION_KEY: "{{ .encryption_key }}"
+        N8N_BASIC_AUTH_USER: "{{ .basic_auth_user }}"
+        N8N_BASIC_AUTH_PASSWORD: "{{ .basic_auth_password }}"
+  data:
+    - secretKey: encryption_key
+      remoteRef: { key: n8n/app, property: encryption_key }
+    - secretKey: basic_auth_user
+      remoteRef: { key: n8n/app, property: basic_auth_user }
+    - secretKey: basic_auth_password
+      remoteRef: { key: n8n/app, property: basic_auth_password }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n8n
+  namespace: n8n
+  labels:
+    app.kubernetes.io/name: n8n
+    app.kubernetes.io/part-of: workflow-automation
+    app.kubernetes.io/component: app
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: n8n
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: n8n
+        app.kubernetes.io/component: app
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      nodeSelector:
+        kubernetes.io/hostname: ubuntu
+      containers:
+        - name: n8n
+          image: docker.n8n.io/n8nio/n8n:2.21.5
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 5678 }
+          env:
+            - { name: N8N_HOST, value: "n8n.e-dani.com" }
+            - { name: N8N_PORT, value: "5678" }
+            - { name: N8N_PROTOCOL, value: "https" }
+            - { name: N8N_EDITOR_BASE_URL, value: "https://n8n.e-dani.com/" }
+            - { name: WEBHOOK_URL, value: "https://n8n.e-dani.com/" }
+            - { name: N8N_PROXY_HOPS, value: "1" }
+            - { name: N8N_RUNNERS_ENABLED, value: "true" }
+            - { name: N8N_BLOCK_ENV_ACCESS_IN_NODE, value: "false" }
+            - { name: N8N_LOG_LEVEL, value: "info" }
+            - { name: N8N_DIAGNOSTICS_ENABLED, value: "false" }
+            - { name: N8N_VERSION_NOTIFICATIONS_ENABLED, value: "true" }
+            - { name: GENERIC_TIMEZONE, value: "Europe/Madrid" }
+            - { name: TZ, value: "Europe/Madrid" }
+            - { name: DB_TYPE, value: "postgresdb" }
+            - { name: DB_POSTGRESDB_HOST, value: "postgres-shared-rw.databases.svc.cluster.local" }
+            - { name: DB_POSTGRESDB_PORT, value: "5432" }
+            - { name: DB_POSTGRESDB_DATABASE, value: "n8n" }
+            - { name: DB_POSTGRESDB_SCHEMA, value: "public" }
+            - name: DB_POSTGRESDB_USER
+              valueFrom: { secretKeyRef: { name: n8n-postgres, key: DB_POSTGRESDB_USER } }
+            - name: DB_POSTGRESDB_PASSWORD
+              valueFrom: { secretKeyRef: { name: n8n-postgres, key: DB_POSTGRESDB_PASSWORD } }
+            - { name: N8N_BASIC_AUTH_ACTIVE, value: "true" }
+            - name: N8N_BASIC_AUTH_USER
+              valueFrom: { secretKeyRef: { name: n8n-app, key: N8N_BASIC_AUTH_USER } }
+            - name: N8N_BASIC_AUTH_PASSWORD
+              valueFrom: { secretKeyRef: { name: n8n-app, key: N8N_BASIC_AUTH_PASSWORD } }
+            - name: N8N_ENCRYPTION_KEY
+              valueFrom: { secretKeyRef: { name: n8n-app, key: N8N_ENCRYPTION_KEY } }
+            - name: N8N_LICENSE_ACTIVATION_KEY
+              valueFrom: { secretKeyRef: { name: n8n-app, key: N8N_LICENSE_ACTIVATION_KEY, optional: true } }
+            - { name: EXTERNAL_HOOK_FILES, value: "/opt/n8n-hooks/workflow-backup-hook.js" }
+            - name: N8N_BACKUP_WEBHOOK_URL
+              valueFrom: { secretKeyRef: { name: n8n-workflow-backup, key: N8N_BACKUP_WEBHOOK_URL } }
+            - name: N8N_BACKUP_WEBHOOK_SECRET
+              valueFrom: { secretKeyRef: { name: n8n-workflow-backup, key: N8N_BACKUP_WEBHOOK_SECRET } }
+            - name: GITHUB_TOKEN
+              valueFrom: { secretKeyRef: { name: n8n-workflow-backup, key: GITHUB_TOKEN } }
+            - name: GITHUB_OWNER
+              valueFrom: { secretKeyRef: { name: n8n-workflow-backup, key: GITHUB_OWNER } }
+            - name: GITHUB_REPO
+              valueFrom: { secretKeyRef: { name: n8n-workflow-backup, key: GITHUB_REPO } }
+            - name: GITHUB_BRANCH
+              valueFrom: { secretKeyRef: { name: n8n-workflow-backup, key: GITHUB_BRANCH } }
+            - name: GITHUB_WORKFLOW_BACKUP_PATH
+              valueFrom: { secretKeyRef: { name: n8n-workflow-backup, key: GITHUB_WORKFLOW_BACKUP_PATH } }
+            - name: N8N_BACKUP_EXCLUDE_WORKFLOW_IDS
+              valueFrom: { secretKeyRef: { name: n8n-workflow-backup, key: N8N_BACKUP_EXCLUDE_WORKFLOW_IDS } }
+            - name: N8N_BACKUP_SOURCE_INSTANCE
+              valueFrom: { secretKeyRef: { name: n8n-workflow-backup, key: N8N_BACKUP_SOURCE_INSTANCE } }
+            - name: N8N_BACKUP_HOOK_TIMEOUT_MS
+              valueFrom: { secretKeyRef: { name: n8n-workflow-backup, key: N8N_BACKUP_HOOK_TIMEOUT_MS } }
+          volumeMounts:
+            - { name: workflow-backup-hook, mountPath: /opt/n8n-hooks/workflow-backup-hook.js, subPath: workflow-backup-hook.js, readOnly: true }
+            - { name: data, mountPath: /home/node/.n8n }
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+      volumes:
+        - name: workflow-backup-hook
+          configMap: { name: n8n-workflow-backup-hook }
+        - name: data
+          persistentVolumeClaim: { claimName: n8n-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: n8n
+  namespace: n8n
+  labels:
+    app.kubernetes.io/name: n8n
+    app.kubernetes.io/part-of: workflow-automation
+spec:
+  selector:
+    app.kubernetes.io/name: n8n
+    app.kubernetes.io/component: app
+  ports:
+    - { name: http, port: 80, targetPort: 5678 }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: n8n
+  namespace: n8n
+  labels:
+    app.kubernetes.io/name: n8n
+    app.kubernetes.io/part-of: workflow-automation
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    external-dns.alpha.kubernetes.io/hostname: n8n.e-dani.com
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik-lan
+  rules:
+    - host: n8n.e-dani.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: n8n
+                port:
+                  number: 80
+  tls:
+    - hosts: [n8n.e-dani.com]
+      secretName: n8n-tls

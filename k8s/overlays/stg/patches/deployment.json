@@ -1,0 +1,18 @@
+[
+  { "op": "replace", "path": "/metadata/name", "value": "n8n-stg" },
+  { "op": "replace", "path": "/metadata/namespace", "value": "n8n-stg" },
+  { "op": "replace", "path": "/metadata/labels/app.kubernetes.io~1name", "value": "n8n-stg" },
+  { "op": "replace", "path": "/spec/selector/matchLabels/app.kubernetes.io~1name", "value": "n8n-stg" },
+  { "op": "replace", "path": "/spec/template/metadata/labels/app.kubernetes.io~1name", "value": "n8n-stg" },
+  { "op": "replace", "path": "/spec/template/spec/containers/0/env/0/value", "value": "n8n-stg.e-dani.com" },
+  { "op": "replace", "path": "/spec/template/spec/containers/0/env/3/value", "value": "https://n8n-stg.e-dani.com/" },
+  { "op": "replace", "path": "/spec/template/spec/containers/0/env/4/value", "value": "https://n8n-stg.e-dani.com/" },
+  { "op": "replace", "path": "/spec/template/spec/containers/0/env/16/value", "value": "n8n_stg" },
+  { "op": "replace", "path": "/spec/template/spec/containers/0/env/18/valueFrom/secretKeyRef/name", "value": "n8n-stg-postgres" },
+  { "op": "replace", "path": "/spec/template/spec/containers/0/env/19/valueFrom/secretKeyRef/name", "value": "n8n-stg-postgres" },
+  { "op": "replace", "path": "/spec/template/spec/containers/0/env/21/valueFrom/secretKeyRef/name", "value": "n8n-stg-app" },
+  { "op": "replace", "path": "/spec/template/spec/containers/0/env/22/valueFrom/secretKeyRef/name", "value": "n8n-stg-app" },
+  { "op": "replace", "path": "/spec/template/spec/containers/0/env/23/valueFrom/secretKeyRef/name", "value": "n8n-stg-app" },
+  { "op": "replace", "path": "/spec/template/spec/containers/0/env/24/valueFrom/secretKeyRef/name", "value": "n8n-stg-app" },
+  { "op": "replace", "path": "/spec/template/spec/volumes/1/persistentVolumeClaim/claimName", "value": "n8n-stg-data" }
+]

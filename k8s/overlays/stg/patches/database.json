@@ -1,0 +1,6 @@
+[
+  { "op": "replace", "path": "/metadata/name", "value": "n8n-stg" },
+  { "op": "replace", "path": "/metadata/labels/app.kubernetes.io~1name", "value": "n8n-stg" },
+  { "op": "replace", "path": "/spec/name", "value": "n8n_stg" },
+  { "op": "replace", "path": "/spec/owner", "value": "n8n_stg" }
+]
